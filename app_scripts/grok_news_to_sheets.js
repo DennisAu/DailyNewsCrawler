@@ -420,22 +420,39 @@ function saveToSheet(dataRows, sheetName) {
 // ***********************************************
 
 /**
- * Creates a daily trigger to run the `runGrokNewsCollector` function.
+ * Creates triggers to run the `runGrokNewsCollector` function at specified times.
+ * This setup will run the collector daily at 7 AM, 3 PM (15:00), and 11 PM (23:00).
  * Run this function once manually to set up the trigger.
  */
-function createDailyGrokNewsTrigger() {
+function setupNewsCollectorTriggers() {
   // Delete any existing triggers for this function to avoid duplicates
   deleteTriggersByName('runGrokNewsCollector');
 
-  ScriptApp.newTrigger('runGrokNewsCollector')
-    .timeBased()
-    .atHour(8) // Example: Run at 8 AM
-    .nearMinute(0) // Around the 0th minute of the hour
-    .everyDays(1) // Run daily
-    .inTimezone(Session.getScriptTimeZone()) // Use the script's timezone
-    .create();
-  Logger.log('Daily trigger created for runGrokNewsCollector to run around 8 AM.');
-  SpreadsheetApp.getUi().alert('Trigger Created', 'A daily trigger has been set up to run the news collector around 8 AM.', SpreadsheetApp.getUi().ButtonSet.OK);
+  const triggerHours = [7, 15, 23]; // 7:00, 15:00 (3 PM), 23:00 (11 PM)
+
+  triggerHours.forEach(hour => {
+    ScriptApp.newTrigger('runGrokNewsCollector')
+      .timeBased()
+      .atHour(hour)
+      .nearMinute(0) // Around the 0th minute of the hour
+      .everyDays(1) // Run daily
+      .inTimezone(Session.getScriptTimeZone()) // Use the script's timezone
+      .create();
+    Logger.log(`Trigger created for runGrokNewsCollector to run daily around ${hour}:00.`);
+  });
+
+  Logger.log(`Successfully set up ${triggerHours.length} daily triggers for runGrokNewsCollector at 7 AM, 3 PM, and 11 PM.`);
+  try {
+    SpreadsheetApp.getUi().alert(
+      'Triggers Created',
+      'Triggers have been set up to run the news collector daily at 7 AM, 3 PM, and 11 PM.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } catch (e) {
+    Logger.log('Could not display UI alert, but triggers were successfully set up. Error: ' + e.toString());
+    // This can happen if the script is run in a context without UI access (e.g., sometimes when run directly from the script editor).
+    // The primary function (trigger creation) was successful as per previous logs.
+  }
 }
 
 /**
@@ -468,8 +485,8 @@ function onOpen() {
     .createMenu('Grok News Collector')
     .addItem('Run Now', 'runGrokNewsCollector')
     .addSeparator()
-    .addItem('Setup Daily Trigger (8 AM)', 'createDailyGrokNewsTrigger')
-    .addItem('Delete All Triggers for Collector', 'deleteAllCollectorTriggers')
+    .addItem('Setup Triggers (7AM, 3PM, 11PM)', 'setupNewsCollectorTriggers')
+    .addItem('Delete All Collector Triggers', 'deleteAllCollectorTriggers')
     .addToUi();
 }
 
@@ -478,5 +495,5 @@ function onOpen() {
  */
 function deleteAllCollectorTriggers() {
     deleteTriggersByName('runGrokNewsCollector');
-    SpreadsheetApp.getUi().alert('Triggers Deleted', 'All daily triggers for the Grok News Collector have been removed.', SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().alert('Triggers Deleted', 'All scheduled triggers for the Grok News Collector have been removed.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
