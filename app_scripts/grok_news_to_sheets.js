@@ -8,6 +8,8 @@
 const CHINA_SHEET_NAME = 'china_news'; // Sheet for China news
 const GLOBAL_SHEET_NAME = 'global_news'; // Sheet for Global news
 const TECH_SHEET_NAME = 'tech_news'; // Sheet for Global Tech news
+const FINANCE_SHEET_NAME = 'finance_news'; // Sheet for Finance news
+const X_HOT_CONTENT_SHEET_NAME = 'x_hot_content'; // Sheet for X Hot Content
 
 // Grok API Configuration
 // IMPORTANT: Set your GROK_API_KEY in Google Apps Script's Script Properties.
@@ -74,6 +76,31 @@ function runGrokNewsCollector() {
     } else {
       Logger.log('No news items returned for Global Tech or an error occurred.');
     }
+
+    // Fetch and save Finance news
+    Logger.log('Fetching Finance news...');
+    const financeNewsQuery = '全球过去24小时内重要的财经新闻和市场动态'; // Query for Finance news
+    const financeNewsRaw = fetchNewsFromGrok(grokApiKey, financeNewsQuery, 'Finance');
+    if (financeNewsRaw && financeNewsRaw.length > 0) {
+      const formattedFinanceNews = formatNewsDataFromGrok(financeNewsRaw, 'Finance');
+      saveToSheet(formattedFinanceNews, FINANCE_SHEET_NAME);
+      Logger.log(`Successfully fetched and saved ${formattedFinanceNews.length} news items for Finance.`);
+    } else {
+      Logger.log('No news items returned for Finance or an error occurred.');
+    }
+
+    // Fetch and save X Hot Content
+    Logger.log('Fetching X Hot Content...');
+    const xHotContentQuery = 'X上过去24小时内最热门的内容和讨论'; // Query for X Hot Content
+    const xHotContentRaw = fetchNewsFromGrok(grokApiKey, xHotContentQuery, 'X Hot Content');
+    if (xHotContentRaw && xHotContentRaw.length > 0) {
+      const formattedXHotContent = formatNewsDataFromGrok(xHotContentRaw, 'X Hot Content');
+      saveToSheet(formattedXHotContent, X_HOT_CONTENT_SHEET_NAME);
+      Logger.log(`Successfully fetched and saved ${formattedXHotContent.length} items for X Hot Content.`);
+    } else {
+      Logger.log('No items returned for X Hot Content or an error occurred.');
+    }
+
     Logger.log('News collection and saving process completed!');
   } catch (error) {
     Logger.log('An error occurred during the execution: ' + error.toString());
@@ -109,7 +136,21 @@ function fetchNewsFromGrok(apiKey, query, regionName) {
   const MAX_RETRIES = 3;
   const RETRY_DELAY_MS = 3000; // 3 seconds delay between retries
 
-  const jsonPrompt = `Please provide a comprehensive digest of ${query} from reputable and authoritative news organizations. Aim for at least 6-12 diverse news items if available within the specified timeframe.
+  let jsonPrompt;
+  if (regionName === 'X Hot Content') {
+    jsonPrompt = `Please provide a digest of the most popular posts, discussions, and trending topics on X (formerly Twitter) from the past 24 hours using the query "${query}". Aim for at least 6-12 diverse items if available.
+Return the response strictly as a JSON object with a single key named "news_items".
+The "news_items" array should contain multiple distinct items.
+Each item object in the array must have the following string fields: "title" (e.g., a summary of the post or topic), "contents" (e.g., key text from the post or a brief explanation of the trend), and "source" (this could be the X handle if identifiable, or simply "X").
+It must also have a field named "links" which is an array of URL strings (e.g., direct links to relevant X posts).
+Ensure the "contents" field provides a good summary.
+If an item is not in Simplified Chinese (for example, if it is in English, Korean, Japanese, or any other language), provide both the original title and contents, and their Simplified Chinese translations. The translated title should be in a field named "title_cn" and the translated contents in a field named "contents_cn". If the item is already in Chinese, then omit "title_cn" and "contents_cn".
+Do not include any explanations, introductory text, or any characters outside of the JSON object itself.
+The "title" should be concise and informative.
+The "links" array should contain relevant URLs. It can be an empty array if no specific links are found.
+The "source" should indicate the origin (e.g., "X" or a specific X handle if appropriate).`;
+  } else {
+    jsonPrompt = `Please provide a comprehensive digest of ${query} from reputable and authoritative news organizations. Aim for at least 6-12 diverse news items if available within the specified timeframe.
   For general global news or global technology news, prioritize internationally recognized news agencies, established media outlets, and reputable tech publications (e.g., Reuters, Associated Press, BBC News, CNN, The New York Times, The Wall Street Journal, The Guardian, Le Monde, Der Spiegel, TechCrunch, Wired, The Verge, Ars Technica).
   For China news, prioritize official news agencies and major state-affiliated media (e.g., Xinhua News Agency, People's Daily, CCTV, China Daily, Global Times, CGTN).
   Return the response strictly as a JSON object with a single key named "news_items".
@@ -124,10 +165,11 @@ function fetchNewsFromGrok(apiKey, query, regionName) {
   The "title" should be concise and informative (in the original language).
   The "links" array should contain relevant URLs for the news item. It can be an empty array if no specific links are found.
   The "source" should be the name of the news publication or source.`;
+  }
 
   const payload = {
     messages: [{ role: 'user', content: jsonPrompt }],
-    model: GROK_MODEL, 
+    model: GROK_MODEL,
     search_parameters: {
       mode: "on", // "on" 强制启用实时搜索
       from_date: yesterdayISO, // 设置搜索的起始日期为昨天
@@ -136,20 +178,21 @@ function fetchNewsFromGrok(apiKey, query, regionName) {
       // 如果未提供，则默认为 "web" 和 "x"。
       // "news" 类型专注于新闻出版物。
       // "country" 参数可以用于 "web" 和 "news" 类型，以倾向于特定地区的结果。
-      sources: regionName === 'China' ? [
-        { "type": "news", "country": "CN" }, // Prioritize news sources from China for 'China' region
-        { "type": "web", "country": "CN" },  // Prioritize web content from China
-        { "type": "x" }                      // Still allow information from X
-        // Example for specific Chinese RSS feeds if you have them:
-        // { "type": "rss", "links": ["http://www.xinhuanet.com/rss/world.xml", "http://www.people.com.cn/rss/world.xml"] }
-      ] : [
-        { "type": "news" }, // Search global news sources
-        { "type": "web" },  // Search global web content.
-        // For global news, we might want to explicitly exclude country to get a broader scope, or let Grok decide.
-        { "type": "x" }     // Allow information from X for 'Global' and 'Global Tech' regions
-        // Example for specific global RSS feeds if you have them:
-        // { "type": "rss", "links": ["http://feeds.reuters.com/reuters/topNews", "https://feeds.bbci.co.uk/news/world/rss.xml"] }
-      ],
+      sources: regionName === 'X Hot Content' ?
+        [{ "type": "x" }] :
+        (regionName === 'China' ? [
+          { "type": "news", "country": "CN" }, // Prioritize news sources from China for 'China' region
+          { "type": "web", "country": "CN" },  // Prioritize web content from China
+          { "type": "x" }                      // Still allow information from X
+          // Example for specific Chinese RSS feeds if you have them:
+          // { "type": "rss", "links": ["http://www.xinhuanet.com/rss/world.xml", "http://www.people.com.cn/rss/world.xml"] }
+        ] : [
+          { "type": "news" }, // Search global news sources for other categories like 'Global', 'Global Tech', 'Finance'
+          { "type": "web" },  // Search global web content for other categories
+          { "type": "x" }     // Allow information from X for other categories
+          // Example for specific global RSS feeds if you have them:
+          // { "type": "rss", "links": ["http://feeds.reuters.com/reuters/topNews", "https://feeds.bbci.co.uk/news/world/rss.xml"] }
+        ]),
       // 如果您想排除特定网站，可以这样做：
       // sources: [{ "type": "news", "excluded_websites": ["example.com", "another.com"] }]
       // You can also set a limit on how many data sources will be considered in the query
